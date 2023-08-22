@@ -23,9 +23,8 @@ likely to be followed by a latent word, e.g. "joy". The core idea is:
 
 
 To run:
-> wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
-> make
-> ./run stories15M.bin -n 10 -l "joy"     
+> wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories42M.bin
+> make && ./run stories42M.bin -t 0.5 -n 100 -l "life"
 
 Forked off of https://github.com/karpathy/llama2.c
 Removed a bunch of files to better understand the core inference functions.

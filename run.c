@@ -7,12 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#if defined _WIN32
-#include "win.h"
-#else
 #include <sys/mman.h>
 #include <unistd.h>
-#endif
 
 // ----------------------------------------------------------------------------
 // Transformer model
@@ -787,10 +783,10 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
     for (int q = 0; q < sampler->vocab_size; q++) logits[q] /= sampler->temperature;
     softmax(logits, sampler->vocab_size);
 
-    int max_token = 0;
+    int max_token = 260; // ignore the raw hex tokens at the beginning
     float max_p = logits[max_token];
 
-    for (int token = 1; token < sampler->vocab_size; token++) {
+    for (int token = max_token; token < sampler->vocab_size; token++) {
 
       // Pruning for efficiency
       if (logits[token] < 0.001) continue;
