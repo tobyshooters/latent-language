@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #endif
+
 // ----------------------------------------------------------------------------
 // Transformer model
 
@@ -779,47 +780,42 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
                   //
   while (pos < steps) {
 
-    // forward the transformer to get logits for the next token
-    // NOTE: this seems to be a stateful pass, need to make sure I can run this multiple times.
-    float *logits = forward(transformer, token, pos);
-
     /////////////////////////////////////////////////////////////////
     // CUSTOM SAMPLER
 
-    // Temperature + softmax
-    for (int q = 0; q < sampler->vocab_size; q++) {
-      logits[q] /= sampler->temperature;
-    }
+    float *logits = forward(transformer, token, pos);
+    for (int q = 0; q < sampler->vocab_size; q++) logits[q] /= sampler->temperature;
     softmax(logits, sampler->vocab_size);
 
-    int max_i = 0;
-    float max_p = logits[0];
+    int max_token = 0;
+    float max_p = logits[max_token];
 
-    for (int i = 1; i < sampler->vocab_size; i++) {
+    for (int token = 1; token < sampler->vocab_size; token++) {
 
-      if (logits[i] < 0.001) {
-        // Pruning for efficiency
-        continue;
-      }
+      // Pruning for efficiency
+      if (logits[token] < 0.001) continue;
 
-      float *next_logits = forward(transformer, i, pos + 1);
-
-      for (int q = 0; q < sampler->vocab_size; q++) {
-        next_logits[q] /= sampler->temperature;
-      }
+      // Look-forward probabilities
+      float *next_logits = forward(transformer, token, pos + 1);
+      for (int q = 0; q < sampler->vocab_size; q++) next_logits[q] /= sampler->temperature;
       softmax(next_logits, sampler->vocab_size);
 
-      double p_compound = next_logits[target_token]; // * logits[i];
+      // Likelihood of latent word
+      double p_latent = logits[token] + next_logits[target_token];
 
-      if (p_compound  > max_p) {
-        max_i = i;
-        max_p = p_compound;
+      // Use most likely, with some randomness
+      float coin = random_f32(&sampler->rng_state);
+      if (p_latent > max_p && coin < 0.9) {
+        max_p = p_latent;
+        max_token = token;
       }
     }
 
-    next = max_i;
+    next = max_token;
     pos++;
     /////////////////////////////////////////////////////////////////
+
+    /* float *logits = forward(transformer, token, pos); */
 
     // advance the state state machine
     /* if (pos < num_prompt_tokens) { */
@@ -831,8 +827,7 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
     /* } */
     /* pos++; */
 
-    // data-dependent terminating condition: the BOS (1) token delimits
-    // sequences
+    // data-dependent terminating condition: the BOS (1) token delimits sequences
     if (next == 1) {
       break;
     }
@@ -854,7 +849,7 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
   // iteration)
   if (pos > 1) {
     long end = time_in_ms();
-    fprintf(stderr, "achieved tok/s: %f\n",
+    fprintf(stderr, "\nachieved tok/s: %f\n",
             (pos - 1) / (double)(end - start) * 1000);
   }
 
@@ -930,7 +925,6 @@ int main(int argc, char *argv[]) {
       error_usage();
     }
   }
-  printf("latent word %s\n", latent_word);
 
   // parameter validation/overrides
   if (rng_seed <= 0)
@@ -966,7 +960,7 @@ int main(int argc, char *argv[]) {
       break;
     }
   }
-  printf("Latent token for %s: %s %d\n", latent_word, tokenizer.vocab[target_token], target_token);
+  printf("Latent token for %s: %s %d\n\n", latent_word, tokenizer.vocab[target_token], target_token);
 
   if (target_token < 0) {
     return 0;
