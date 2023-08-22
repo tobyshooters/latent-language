@@ -778,7 +778,11 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
 
     float *logits = forward(transformer, token, pos);
 
-    if (target_token >= 0){
+    if (pos < num_prompt_tokens) {
+      next = prompt_tokens[pos];
+
+    } else if (target_token >= 0) {
+
       /////////////////////////////////////////////////////////////////
       // LOOK-FORWARD SAMPLER
       for (int q = 0; q < sampler->vocab_size; q++) logits[q] /= sampler->temperature;
@@ -809,24 +813,16 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
       }
 
       next = max_token;
-      pos++;
       /////////////////////////////////////////////////////////////////
+
     } else {
-      // advance the state state machine
-      if (pos < num_prompt_tokens) {
-        // if we are still processing the input prompt, force the next prompt token
-        next = prompt_tokens[pos];
-      } else {
-        // otherwise sample the next token from the logits
-        next = sample(sampler, logits);
-      }
-      pos++;
+      next = sample(sampler, logits);
     }
 
+    pos++;
+
     // data-dependent terminating condition: the BOS (1) token delimits sequences
-    if (next == 1) {
-      break;
-    }
+    if (next == 1) break;
 
     // print the token as string, decode it with the Tokenizer object
     char *piece = decode(tokenizer, token, next);
@@ -882,7 +878,7 @@ int main(int argc, char *argv[]) {
   int steps = 256;                 // number of steps to run for
   char *prompt = NULL;             // prompt string
   unsigned long long rng_seed = 0; // seed rng with time by default
-  char *latent_word = NULL;
+  char *latent_word = NULL; // use look-forward sampling with expected latent word
 
   // poor man's C argparse so we can override the defaults above from the
   // command line
