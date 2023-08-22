@@ -1,9 +1,8 @@
 LATENT LANGUAGE in LARGE LANGUAGE MODELS
 
 "Look forward" sampling technique to produce text which, at any point, is
-likely to be followed by a latent word, e.g. "joy".
+likely to be followed by a latent word, e.g. "joy". The core idea is:
 
-The core idea is:
 > latent_word = "joy"
 > text = ""
 >
