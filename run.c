@@ -776,52 +776,52 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
                   //
   while (pos < steps) {
 
-    /////////////////////////////////////////////////////////////////
-    // CUSTOM SAMPLER
-
     float *logits = forward(transformer, token, pos);
-    for (int q = 0; q < sampler->vocab_size; q++) logits[q] /= sampler->temperature;
-    softmax(logits, sampler->vocab_size);
 
-    int max_token = 260; // ignore the raw hex tokens at the beginning
-    float max_p = logits[max_token];
+    if (target_token >= 0){
+      /////////////////////////////////////////////////////////////////
+      // LOOK-FORWARD SAMPLER
+      for (int q = 0; q < sampler->vocab_size; q++) logits[q] /= sampler->temperature;
+      softmax(logits, sampler->vocab_size);
 
-    for (int token = max_token; token < sampler->vocab_size; token++) {
+      int max_token = 260; // ignore the raw hex tokens at the beginning
+      float max_p = logits[max_token];
 
-      // Pruning for efficiency
-      if (logits[token] < 0.001) continue;
+      for (int token = max_token; token < sampler->vocab_size; token++) {
 
-      // Look-forward probabilities
-      float *next_logits = forward(transformer, token, pos + 1);
-      for (int q = 0; q < sampler->vocab_size; q++) next_logits[q] /= sampler->temperature;
-      softmax(next_logits, sampler->vocab_size);
+        // Pruning for efficiency
+        if (logits[token] < 0.001) continue;
 
-      // Likelihood of latent word
-      double p_latent = logits[token] + next_logits[target_token];
+        // Look-forward probabilities
+        float *next_logits = forward(transformer, token, pos + 1);
+        for (int q = 0; q < sampler->vocab_size; q++) next_logits[q] /= sampler->temperature;
+        softmax(next_logits, sampler->vocab_size);
 
-      // Use most likely, with some randomness
-      float coin = random_f32(&sampler->rng_state);
-      if (p_latent > max_p && coin < 0.9) {
-        max_p = p_latent;
-        max_token = token;
+        // Likelihood of latent word
+        double p_latent = logits[token] + next_logits[target_token];
+
+        // Use most likely, with some randomness
+        float coin = random_f32(&sampler->rng_state);
+        if (p_latent > max_p && coin < 0.9) {
+          max_p = p_latent;
+          max_token = token;
+        }
       }
+
+      next = max_token;
+      pos++;
+      /////////////////////////////////////////////////////////////////
+    } else {
+      // advance the state state machine
+      if (pos < num_prompt_tokens) {
+        // if we are still processing the input prompt, force the next prompt token
+        next = prompt_tokens[pos];
+      } else {
+        // otherwise sample the next token from the logits
+        next = sample(sampler, logits);
+      }
+      pos++;
     }
-
-    next = max_token;
-    pos++;
-    /////////////////////////////////////////////////////////////////
-
-    /* float *logits = forward(transformer, token, pos); */
-
-    // advance the state state machine
-    /* if (pos < num_prompt_tokens) { */
-    /*   // if we are still processing the input prompt, force the next prompt token */
-    /*   next = prompt_tokens[pos]; */
-    /* } else { */
-    /*   // otherwise sample the next token from the logits */
-    /*   next = sample(sampler, logits); */
-    /* } */
-    /* pos++; */
 
     // data-dependent terminating condition: the BOS (1) token delimits sequences
     if (next == 1) {
@@ -882,7 +882,7 @@ int main(int argc, char *argv[]) {
   int steps = 256;                 // number of steps to run for
   char *prompt = NULL;             // prompt string
   unsigned long long rng_seed = 0; // seed rng with time by default
-  char *latent_word = "life";
+  char *latent_word = NULL;
 
   // poor man's C argparse so we can override the defaults above from the
   // command line
@@ -949,17 +949,17 @@ int main(int argc, char *argv[]) {
 
   // Find the word we care about
   int target_token = -1;
-  for (int i = 0; i < transformer.config.vocab_size; i++) {
-    if (strstr(tokenizer.vocab[i], latent_word) != NULL) {
-      printf("Option: %d %s\n", i, tokenizer.vocab[i]);
-      target_token = i;
-      break;
+  if (latent_word) {
+    for (int i = 0; i < transformer.config.vocab_size; i++) {
+      if (strstr(tokenizer.vocab[i], latent_word) != NULL) {
+        printf("Option: %d %s\n", i, tokenizer.vocab[i]);
+        target_token = i;
+        break;
+      }
     }
-  }
-  printf("Latent token for %s: %s %d\n\n", latent_word, tokenizer.vocab[target_token], target_token);
-
-  if (target_token < 0) {
-    return 0;
+    if (target_token >= 0) {
+      printf("Latent token for %s: %s %d\n\n", latent_word, tokenizer.vocab[target_token], target_token);
+    }
   }
 
   // run!
